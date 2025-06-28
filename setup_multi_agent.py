@@ -33,7 +33,7 @@ def create_workspace_structure():
 
 def setup_environment():
     """Set up environment configuration"""
-    env_template = Path("google-search-agent/env.example")
+    env_template = Path(".env.example")
     env_file = Path(".env")
     
     if not env_file.exists():
@@ -44,6 +44,7 @@ def setup_environment():
             print("   ⚠️  Please edit .env and add your API keys!")
         else:
             print(f"❌ Template not found: {env_template}")
+            print("   💡 You can copy from: google-search-agent/env.example")
     else:
         print(f"📄 Environment file already exists: {env_file.absolute()}")
 

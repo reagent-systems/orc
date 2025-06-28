@@ -72,7 +72,7 @@ if __name__ == "__main__":
     # Check environment setup
     if not os.getenv('GOOGLE_API_KEY') and not os.getenv('GOOGLE_GENAI_USE_VERTEXAI'):
         print("❌ Missing Google API key. Please set up your environment:")
-        print(f"   1. Copy google-search-agent/env.example to {env_file}")
+        print(f"   1. Copy .env.example to .env (or use setup_multi_agent.py)")
         print("   2. Add your Google API keys")
         print("   3. Run: python3 run_autonomous.py")
         sys.exit(1)
