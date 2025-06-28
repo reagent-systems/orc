@@ -8,6 +8,9 @@ multi-agent workspace, claiming and processing search-related tasks.
 
 from google.adk.agents import LlmAgent
 from google.adk.tools import google_search
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 from typing import Dict, List
 import datetime
 import re
@@ -48,11 +51,47 @@ class BaseAgent:
             instruction=self.get_metacognition_instruction()
         )
         
+        # Create runners for LLM execution
+        session_service = InMemorySessionService()
+        self.executor_runner = Runner(agent=self.executor, app_name=f"{agent_type}_executor", session_service=session_service)
+        self.evaluator_runner = Runner(agent=self.evaluator, app_name=f"{agent_type}_evaluator", session_service=session_service)
+        self.metacognition_runner = Runner(agent=self.metacognition, app_name=f"{agent_type}_metacognition", session_service=session_service)
+        
         self.active_tasks = []
         # Workspace should be at project root level, shared by all agents
         self.workspace_path = os.getenv('WORKSPACE_PATH', os.path.join(os.path.dirname(__file__), '..', '..', 'workspace'))
         self.max_concurrent_tasks = int(os.getenv('MAX_CONCURRENT_TASKS', '3'))
     
+    async def _run_llm_query(self, runner: Runner, prompt: str) -> str:
+        """Helper method to run LLM queries using proper ADK Runner pattern"""
+        try:
+            # Create a unique session for this query
+            session_id = f"query_{uuid.uuid4().hex[:8]}"
+            user_id = f"agent_{self.agent_id}"
+            
+            # Create session
+            session = await runner.session_service.create_session(
+                app_name=runner.app_name,
+                user_id=user_id,
+                session_id=session_id
+            )
+            
+            # Create content and run
+            content = types.Content(role='user', parts=[types.Part(text=prompt)])
+            events = runner.run_async(user_id=user_id, session_id=session_id, new_message=content)
+            
+            # Collect final response
+            final_response = ""
+            async for event in events:
+                if event.is_final_response() and event.content and event.content.parts:
+                    final_response = event.content.parts[0].text or ""
+                    break
+            
+            return final_response
+        except Exception as e:
+            print(f"❌ Error in LLM query: {e}")
+            return f"Error: {str(e)}"
+
     def get_threshold(self) -> int:
         """Return eagerness threshold (1-10). Higher = more eager."""
         return 5
@@ -96,9 +135,10 @@ class BaseAgent:
                     
                     if await self.should_handle(task):
                         print(f"🎯 Attempting to claim task: {task['description'][:50]}...")
-                        if self.claim_task(task_file):
+                        claimed_file = self.claim_task(task_file)
+                        if claimed_file:
                             print(f"✅ Claimed task {task['id'][:8]}...")
-                            await self.process_task(task_file)
+                            await self.process_task(claimed_file)
                             break
                 
                 await asyncio.sleep(self.get_polling_interval())
@@ -168,7 +208,7 @@ class BaseAgent:
             Can I technically execute this task? Answer YES or NO only.
             """
             
-            response = await self.evaluator.process(prompt)
+            response = await self._run_llm_query(self.evaluator_runner, prompt)
             can_do = "YES" in response.upper()
             print(f"🔧 Can handle: {can_do}")
             return can_do
@@ -194,7 +234,7 @@ class BaseAgent:
             Return only the number.
             """
             
-            response = await self.evaluator.process(prompt)
+            response = await self._run_llm_query(self.evaluator_runner, prompt)
             match = re.search(r'\d+', response)
             return int(match.group()) if match else 1
         
@@ -225,7 +265,7 @@ class BaseAgent:
             Reasoning: [brief explanation]
             """
             
-            response = await self.metacognition.process(prompt)
+            response = await self._run_llm_query(self.metacognition_runner, prompt)
             return {
                 'proceed': "PROCEED" in response.upper(), 
                 'reasoning': response
@@ -236,7 +276,7 @@ class BaseAgent:
             return {'proceed': True, 'reasoning': 'Error in reflection'}
     
     # Atomic task claiming
-    def claim_task(self, task_file: str) -> bool:
+    def claim_task(self, task_file: str) -> str:
         """Atomically claim a task using os.rename()"""
         try:
             active_dir = os.path.join(self.workspace_path, 'tasks', 'active')
@@ -255,11 +295,11 @@ class BaseAgent:
             task['claimed_at'] = datetime.utcnow().isoformat()
             self.save_task(claimed_file, task)
             
-            return True
+            return claimed_file
         
         except (OSError, FileNotFoundError):
             # Another agent claimed it first
-            return False
+            return None
     
     # Task processing with goal validation
     async def process_task(self, task_file: str):
@@ -272,7 +312,7 @@ class BaseAgent:
             self.update_task_heartbeat(task_file)
             
             # Execute the actual task
-            result = await self.executor.process(f"""
+            result = await self._run_llm_query(self.executor_runner, f"""
             Task to execute: {task['description']}
             Task type: {task.get('type', 'unknown')}
             Context: {task.get('context', {})}
@@ -323,7 +363,7 @@ class BaseAgent:
             Answer YES or NO with brief reasoning.
             """
             
-            response = await self.metacognition.process(prompt)
+            response = await self._run_llm_query(self.metacognition_runner, prompt)
             return "YES" in response.upper()
         
         except Exception as e:
