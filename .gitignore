@@ -1,1 +1,35 @@
+# Environment files
 .env
+.env.local
+.env.*.local
+
+# Agent databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.log
+
+# Agent workspace (contains runtime data)
+workspace/
+
+# Backup files
+*.backup
+*.bak

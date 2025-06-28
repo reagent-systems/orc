@@ -97,8 +97,8 @@ export GOOGLE_CLOUD_LOCATION="us-central1"
 Create a `.env` file in the **project root** (not in the agent folder):
 
 ```bash
-# Copy the template to project root
-cp google-search-agent/env.example .env
+# Copy the template to project root  
+cp .env.example .env
 
 # Edit .env in project root with your keys
 ```
