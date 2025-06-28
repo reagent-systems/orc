@@ -1,0 +1,16 @@
+{
+  "id": "8ca09194-96db-470b-ae31-0fd50ef514bf",
+  "description": "Look up news about multi-agent systems",
+  "type": "search",
+  "requirements": [
+    "web_search"
+  ],
+  "priority": "medium",
+  "context": {
+    "original_goal": "Test the SearchAgent functionality",
+    "test_task": true
+  },
+  "created_at": "2025-06-28T15:09:41.438133",
+  "max_retries": 3,
+  "retry_count": 0
+}

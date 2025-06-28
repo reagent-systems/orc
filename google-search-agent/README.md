@@ -94,10 +94,19 @@ export GOOGLE_CLOUD_LOCATION="us-central1"
 
 ### 4. Search API Configuration
 
-Create a `.env` file in the project root:
+Create a `.env` file in the **project root** (not in the agent folder):
 
 ```bash
-# .env
+# Copy the template to project root
+cp google-search-agent/env.example .env
+
+# Edit .env in project root with your keys
+```
+
+The `.env` file should contain:
+
+```bash
+# .env (in project root: /Users/thyfriendlyfox/Projects/orc/.env)
 # Model Authentication (choose one)
 GOOGLE_GENAI_USE_VERTEXAI=FALSE
 GOOGLE_API_KEY=your_google_ai_studio_key
@@ -117,7 +126,51 @@ GOOGLE_SEARCH_MAX_RESULTS=10
 
 ## 🚀 Running the Agent
 
-### Using ADK Web UI (Recommended)
+### Autonomous Mode (Multi-Agent System) ⭐ NEW
+
+```bash
+# Run from the google-search-agent directory
+cd google-search-agent
+python3 run_autonomous.py
+```
+
+The agent will monitor the **shared workspace** at `../workspace/tasks/pending/` and automatically claim search tasks.
+
+**Important**: The workspace is created at the project root level (`/Users/thyfriendlyfox/Projects/orc/workspace/`) so all agents can share the same task queue.
+
+### Testing Autonomous Mode
+
+```bash
+# From the google-search-agent directory:
+
+# 1. Create test tasks (will be placed in ../workspace/tasks/pending/)
+python3 create_test_task.py
+
+# 2. Start autonomous agent (in another terminal)
+python3 run_autonomous.py
+
+# 3. Watch the agent process tasks automatically!
+```
+
+**Workspace Structure Created**:
+```
+/Users/thyfriendlyfox/Projects/orc/
+├── .env                    # Shared environment config
+├── workspace/              # Shared workspace for all agents
+│   ├── tasks/
+│   │   ├── pending/        # Tasks waiting to be claimed
+│   │   ├── active/         # Tasks being processed
+│   │   ├── completed/      # Finished tasks
+│   │   └── failed/         # Failed tasks
+│   ├── agents/             # Agent heartbeat files
+│   ├── context/            # Shared context from completed tasks
+│   └── results/            # Final deliverables
+└── google-search-agent/    # This agent's code
+```
+
+### Traditional ADK Modes
+
+#### Using ADK Web UI
 
 ```bash
 # From the google-search-agent directory
@@ -126,14 +179,14 @@ adk web
 
 Access the web interface at `http://localhost:8000`
 
-### Using Terminal Interface
+#### Using Terminal Interface
 
 ```bash
 # Run the agent in terminal mode
 adk run search_agent
 ```
 
-### Using API Server
+#### Using API Server
 
 ```bash
 # Start API server for integration

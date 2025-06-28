@@ -1,0 +1,16 @@
+{
+  "id": "56fe456a-fc7b-4339-8dd2-48f5292f0298",
+  "description": "Research recent developments in AI agent frameworks",
+  "type": "search",
+  "requirements": [
+    "web_search"
+  ],
+  "priority": "medium",
+  "context": {
+    "original_goal": "Test the SearchAgent functionality",
+    "test_task": true
+  },
+  "created_at": "2025-06-28T15:09:41.438028",
+  "max_retries": 3,
+  "retry_count": 0
+}

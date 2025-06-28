@@ -1,0 +1,16 @@
+{
+  "id": "32e5b8f6-4a62-49d3-be01-cc9b1f87a803",
+  "description": "Find academic papers on autonomous agent coordination",
+  "type": "search",
+  "requirements": [
+    "web_search"
+  ],
+  "priority": "medium",
+  "context": {
+    "original_goal": "Test the SearchAgent functionality",
+    "test_task": true
+  },
+  "created_at": "2025-06-28T15:09:41.438365",
+  "max_retries": 3,
+  "retry_count": 0
+}

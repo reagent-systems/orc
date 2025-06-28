@@ -1,0 +1,16 @@
+{
+  "id": "c42f7b5d-36e4-40db-9d80-3f8cf04fe0b7",
+  "description": "Find tutorials on how to use Google's Agent Development Kit",
+  "type": "search",
+  "requirements": [
+    "web_search"
+  ],
+  "priority": "medium",
+  "context": {
+    "original_goal": "Test the SearchAgent functionality",
+    "test_task": true
+  },
+  "created_at": "2025-06-28T15:09:41.437839",
+  "max_retries": 3,
+  "retry_count": 0
+}
