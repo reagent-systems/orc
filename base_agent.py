@@ -1,100 +1,32 @@
 """
-File Agent using ADK - Multi-Agent Orchestration Version
+Shared BaseAgent class for multi-agent orchestration system
 
-This agent provides intelligent file operations, code analysis, and agent generation
-capabilities. It operates autonomously within a multi-agent workspace, claiming and 
-processing file-related tasks.
+This base class provides the core functionality for autonomous agents including:
+- Three-LLM architecture (executor, evaluator, metacognition)
+- Workspace monitoring and task claiming
+- Atomic task coordination using os.rename()
+- LLM-based decision making with fitness scoring
+- Goal validation and error handling
 """
+
+import asyncio
+import json
+import os
+import re
+import uuid
+from datetime import datetime
+from typing import Dict, List
 
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
-from google.adk.tools import BaseTool
-from typing import Dict, List
-import datetime
-import re
-import asyncio
-import os
-import json
-import uuid
-from datetime import datetime
-import shutil
-from pathlib import Path
-
-class FileSystemTool(BaseTool):
-    """Custom file system tool for the FileAgent"""
-    
-    def __init__(self):
-        super().__init__(
-            name="file_operations",
-            description="Perform file system operations including read, write, create, delete files and directories"
-        )
-    
-    async def call(self, operation: str, path: str, content: str = None, **kwargs):
-        """Execute file system operations"""
-        try:
-            if operation == "read":
-                with open(path, 'r', encoding='utf-8') as f:
-                    return f.read()
-            
-            elif operation == "write":
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                with open(path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                return f"File written to {path}"
-            
-            elif operation == "append":
-                with open(path, 'a', encoding='utf-8') as f:
-                    f.write(content)
-                return f"Content appended to {path}"
-            
-            elif operation == "delete":
-                if os.path.isfile(path):
-                    os.remove(path)
-                    return f"File {path} deleted"
-                elif os.path.isdir(path):
-                    shutil.rmtree(path)
-                    return f"Directory {path} deleted"
-                else:
-                    return f"Path {path} not found"
-            
-            elif operation == "create_dir":
-                os.makedirs(path, exist_ok=True)
-                return f"Directory {path} created"
-            
-            elif operation == "list":
-                if os.path.isdir(path):
-                    items = os.listdir(path)
-                    return f"Contents of {path}: {items}"
-                else:
-                    return f"Directory {path} not found"
-            
-            elif operation == "exists":
-                return str(os.path.exists(path))
-            
-            elif operation == "copy":
-                dest = kwargs.get('destination')
-                if os.path.isfile(path):
-                    shutil.copy2(path, dest)
-                    return f"File copied from {path} to {dest}"
-                elif os.path.isdir(path):
-                    shutil.copytree(path, dest)
-                    return f"Directory copied from {path} to {dest}"
-                else:
-                    return f"Source {path} not found"
-            
-            else:
-                return f"Unknown operation: {operation}"
-                
-        except Exception as e:
-            return f"Error: {str(e)}"
 
 
 class BaseAgent:
     """Base agent class for multi-agent orchestration system"""
     
-    def __init__(self, agent_type: str, capabilities: List[str]):
+    def __init__(self, agent_type: str, capabilities: List[str], tools: List = None):
         self.agent_id = f"{agent_type}_{uuid.uuid4().hex[:8]}"
         self.agent_type = agent_type
         self.capabilities = capabilities
@@ -104,7 +36,7 @@ class BaseAgent:
             name=f"{agent_type}Executor",
             model="gemini-2.0-flash",
             instruction=self.get_executor_instruction(),
-            tools=[FileSystemTool()]  # Add file tool to executor
+            tools=tools or []  # Allow tools to be passed in
         )
         
         self.evaluator = LlmAgent(
@@ -119,20 +51,16 @@ class BaseAgent:
             instruction=self.get_metacognition_instruction()
         )
         
-        self.active_tasks = []
-        # Workspace should be at project root level, shared by all agents
-        self.workspace_path = os.getenv('WORKSPACE_PATH', os.path.join(os.path.dirname(__file__), '..', '..', 'workspace'))
-        self.max_concurrent_tasks = int(os.getenv('MAX_CONCURRENT_TASKS', '3'))
-        
         # Create runners for LLM execution
         session_service = InMemorySessionService()
         self.executor_runner = Runner(agent=self.executor, app_name=f"{agent_type}_executor", session_service=session_service)
         self.evaluator_runner = Runner(agent=self.evaluator, app_name=f"{agent_type}_evaluator", session_service=session_service)
         self.metacognition_runner = Runner(agent=self.metacognition, app_name=f"{agent_type}_metacognition", session_service=session_service)
-    
-    def get_threshold(self) -> int:
-        """Return eagerness threshold (1-10). Higher = more eager."""
-        return 5
+        
+        self.active_tasks = []
+        # Workspace should be at project root level, shared by all agents
+        self.workspace_path = os.getenv('WORKSPACE_PATH', os.path.join(os.path.dirname(__file__), 'workspace'))
+        self.max_concurrent_tasks = int(os.getenv('MAX_CONCURRENT_TASKS', '3'))
     
     async def _run_llm_query(self, runner: Runner, prompt: str) -> str:
         """Helper method to run LLM queries using proper ADK Runner pattern"""
@@ -164,17 +92,21 @@ class BaseAgent:
             print(f"❌ Error in LLM query: {e}")
             return f"Error: {str(e)}"
 
+    def get_threshold(self) -> int:
+        """Return eagerness threshold (1-10). Higher = more eager."""
+        return 5
+    
     def get_executor_instruction(self) -> str:
         """Instructions for the executor LLM that does the actual work."""
-        raise NotImplementedError
+        raise NotImplementedError("Subclasses must implement get_executor_instruction()")
     
     def get_evaluator_instruction(self) -> str:
         """Instructions for the evaluator LLM that decides task fitness."""
-        raise NotImplementedError
+        raise NotImplementedError("Subclasses must implement get_evaluator_instruction()")
     
     def get_metacognition_instruction(self) -> str:
         """Instructions for the metacognition LLM that provides self-reflection."""
-        raise NotImplementedError
+        raise NotImplementedError("Subclasses must implement get_metacognition_instruction()")
     
     # Main agent loop
     async def monitor_workspace(self):
@@ -345,7 +277,7 @@ class BaseAgent:
     
     # Atomic task claiming
     def claim_task(self, task_file: str) -> str:
-        """Atomically claim a task using os.rename()"""
+        """Atomically claim a task using os.rename() - returns claimed file path"""
         try:
             active_dir = os.path.join(self.workspace_path, 'tasks', 'active')
             os.makedirs(active_dir, exist_ok=True)
@@ -577,82 +509,4 @@ class BaseAgent:
                 json.dump(context_data, f, indent=2)
         
         except Exception as e:
-            print(f"❌ Error saving context: {e}")
-
-
-class FileAgent(BaseAgent):
-    """File Agent for multi-agent orchestration system"""
-    
-    def __init__(self):
-        super().__init__("FileAgent", ["file_operations", "code_analysis", "text_processing", "agent_generation"])
-        self.filesystem_tool = FileSystemTool()
-    
-    def get_threshold(self) -> int:
-        return 8  # Very eager for file operations
-    
-    def get_executor_instruction(self) -> str:
-        return """You are a file operations specialist that handles all file system tasks and code generation.
-        
-        Core responsibilities:
-        - Read, write, create, delete files and directories using the file_operations tool
-        - Code analysis and syntax checking
-        - Text processing and content extraction
-        - Generate new agent code when needed for the multi-agent system
-        - Code refactoring and formatting
-        
-        For multi-agent system tasks:
-        - Generate new agent code based on specifications and research
-        - Create proper ADK agent implementations with BaseAgent inheritance
-        - Set up agent directory structures and configuration files
-        - Process code files and perform analysis
-        
-        Always:
-        - Use the file_operations tool for all file system operations
-        - Validate file operations and provide clear feedback
-        - Follow proper code structure and ADK patterns when generating agents
-        - Ensure generated code follows the multi-agent architecture (BaseAgent, three-LLM system)
-        
-        Available operations: read, write, append, delete, create_dir, list, exists, copy
-        """
-    
-    def get_evaluator_instruction(self) -> str:
-        return """Evaluate file and code tasks for the FileAgent.
-        
-        I can handle tasks requiring:
-        - File system operations (read, write, create, delete)
-        - Code analysis and generation
-        - Text processing and document handling
-        - Agent code generation for the multi-agent system
-        - Directory management and file organization
-        
-        Rate task fitness (1-10) based on:
-        - How well it matches file/code operation needs
-        - Complexity of file operations required
-        - Current workload capacity
-        
-        Answer YES/NO for capability and provide fitness scores.
-        """
-    
-    def get_metacognition_instruction(self) -> str:
-        return """Provide self-reflection for FileAgent decisions.
-        
-        Before taking file tasks, consider:
-        - Is this file operation safe and necessary?
-        - Will this advance the goal effectively?
-        - Am I duplicating existing work or files?
-        - Should I validate file contents before making changes?
-        
-        For code generation:
-        - Do I have enough specifications to generate quality code?
-        - Will the generated code follow proper ADK patterns?
-        - Should I reference existing agent implementations?
-        
-        Prioritize data safety and goal advancement.
-        """
-
-
-# Create the main file agent for this module
-file_agent = FileAgent()
-
-# Keep compatibility with ADK patterns
-root_agent = file_agent.executor 
+            print(f"❌ Error saving context: {e}") 

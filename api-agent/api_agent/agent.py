@@ -7,6 +7,9 @@ workspace, claiming and processing API-related tasks.
 """
 
 from google.adk.agents import LlmAgent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 from google.adk.tools import BaseTool
 from typing import Dict, List, Any
 import datetime
@@ -364,11 +367,47 @@ class BaseAgent:
         # Workspace should be at project root level, shared by all agents
         self.workspace_path = os.getenv('WORKSPACE_PATH', os.path.join(os.path.dirname(__file__), '..', '..', 'workspace'))
         self.max_concurrent_tasks = int(os.getenv('MAX_CONCURRENT_TASKS', '3'))
+        
+        # Create runners for LLM execution
+        session_service = InMemorySessionService()
+        self.executor_runner = Runner(agent=self.executor, app_name=f"{agent_type}_executor", session_service=session_service)
+        self.evaluator_runner = Runner(agent=self.evaluator, app_name=f"{agent_type}_evaluator", session_service=session_service)
+        self.metacognition_runner = Runner(agent=self.metacognition, app_name=f"{agent_type}_metacognition", session_service=session_service)
     
     def get_threshold(self) -> int:
         """Return eagerness threshold (1-10). Higher = more eager."""
         return 5
     
+    async def _run_llm_query(self, runner: Runner, prompt: str) -> str:
+        """Helper method to run LLM queries using proper ADK Runner pattern"""
+        try:
+            # Create a unique session for this query
+            session_id = f"query_{uuid.uuid4().hex[:8]}"
+            user_id = f"agent_{self.agent_id}"
+            
+            # Create session
+            session = await runner.session_service.create_session(
+                app_name=runner.app_name,
+                user_id=user_id,
+                session_id=session_id
+            )
+            
+            # Create content and run
+            content = types.Content(role='user', parts=[types.Part(text=prompt)])
+            events = runner.run_async(user_id=user_id, session_id=session_id, new_message=content)
+            
+            # Collect final response
+            final_response = ""
+            async for event in events:
+                if event.is_final_response() and event.content and event.content.parts:
+                    final_response = event.content.parts[0].text or ""
+                    break
+            
+            return final_response
+        except Exception as e:
+            print(f"❌ Error in LLM query: {e}")
+            return f"Error: {str(e)}"
+
     def get_executor_instruction(self) -> str:
         """Instructions for the executor LLM that does the actual work."""
         raise NotImplementedError
@@ -406,9 +445,10 @@ class BaseAgent:
                     
                     if await self.should_handle(task):
                         print(f"🎯 Attempting to claim task: {task['description'][:50]}...")
-                        if self.claim_task(task_file):
-                            print(f"✅ Claimed task {task['id'][:8]}...")
-                            await self.process_task(task_file)
+                        claimed_file = self.claim_task(task_file)
+                            if claimed_file:
+                                print(f"✅ Claimed task {task[\'id\'][:8]}...")
+                                await self.process_task(claimed_file)
                             break
                 
                 await asyncio.sleep(self.get_polling_interval())
@@ -467,7 +507,7 @@ class BaseAgent:
             Can I technically execute this task? Answer YES or NO only.
             """
             
-            response = await self.evaluator.process(prompt)
+            response = await self._run_llm_query(self.evaluator_runner, prompt)
             return "YES" in response.upper()
         except Exception as e:
             return False
@@ -482,7 +522,7 @@ class BaseAgent:
             Rate my fitness for this task (1-10). Return only the number.
             """
             
-            response = await self.evaluator.process(prompt)
+            response = await self._run_llm_query(self.evaluator_runner, prompt)
             match = re.search(r'\d+', response)
             return int(match.group()) if match else 1
         except:
@@ -501,7 +541,7 @@ class BaseAgent:
             Decision: PROCEED or STEP_BACK
             """
             
-            response = await self.metacognition.process(prompt)
+            response = await self._run_llm_query(self.metacognition_runner, prompt)
             return {
                 'proceed': "PROCEED" in response.upper(), 
                 'reasoning': response
@@ -509,7 +549,7 @@ class BaseAgent:
         except:
             return {'proceed': True, 'reasoning': 'Error in reflection'}
     
-    def claim_task(self, task_file):
+    def claim_task(self, task_file: str) -> str:
         try:
             active_dir = os.path.join(self.workspace_path, 'tasks', 'active')
             os.makedirs(active_dir, exist_ok=True)
@@ -520,16 +560,16 @@ class BaseAgent:
             os.rename(task_file, claimed_file)
             self.active_tasks.append(claimed_file)
             
-            return True
+            return claimed_file
         except (OSError, FileNotFoundError):
-            return False
+            return None
     
     async def process_task(self, task_file):
         try:
             task = self.load_task(task_file)
             print(f"🔥 Processing task: {task['description']}")
             
-            result = await self.executor.process(f"""
+            result = await self._run_llm_query(self.executor_runner, f"""
             Task to execute: {task['description']}
             Task type: {task.get('type', 'unknown')}
             Context: {task.get('context', {})}
@@ -553,7 +593,7 @@ class BaseAgent:
             if not original_goal:
                 return True
             
-            response = await self.metacognition.process(f"""
+            response = await self._run_llm_query(self.metacognition_runner, f"""
             Original goal: {original_goal}
             Task result: {result}
             
