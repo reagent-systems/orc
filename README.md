@@ -226,12 +226,14 @@ The system is designed for easy extension:
 3. **Task Types**: Add new task schemas and processing logic
 4. **Coordination Patterns**: Implement new agent interaction patterns
 
-## 📚 **Architecture Documentation**
+## 📚 **Documentation**
 
-- `/outline/multi-agent-orchestration-design.md` - Complete system design
-- `/outline/agent-types-needed.md` - Full agent capability matrix
-- `/outline/final-architecture.md` - Implementation architecture
-- `/exploration/` - ADK research and documentation
+- **[Complete Documentation](DOCUMENTATION.md)** - Comprehensive system documentation
+- **[Quick Reference](QUICK_REFERENCE.md)** - Essential commands and troubleshooting
+- **[Architecture Design](outline/multi-agent-orchestration-design.md)** - Detailed system architecture
+- **[Agent Types](outline/agent-types-needed.md)** - Full agent capability matrix
+- **[Final Architecture](outline/final-architecture.md)** - Implementation architecture
+- **[ADK Exploration](exploration/)** - ADK research and documentation
 
 ## 🔮 **Next Steps**
 
