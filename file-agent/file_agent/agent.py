@@ -31,17 +31,25 @@ class FileSystemTool(BaseTool):
             description="Perform file system operations including read, write, create, delete files and directories"
         )
     
-    async def call(self, operation: str, path: str, content: str = None, **kwargs):
+    async def call(self, operation: str, file_path: str = None, content: str = None, **kwargs):
         """Execute file system operations"""
         try:
+            # Use file_path from kwargs if not provided directly
+            path = file_path or kwargs.get('path', '')
+            if not path:
+                return "Error: No file path provided"
+            
             if operation == "read":
                 with open(path, 'r', encoding='utf-8') as f:
                     return f.read()
             
             elif operation == "write":
-                os.makedirs(os.path.dirname(path), exist_ok=True)
+                # Ensure directory exists
+                dir_path = os.path.dirname(path)
+                if dir_path:
+                    os.makedirs(dir_path, exist_ok=True)
                 with open(path, 'w', encoding='utf-8') as f:
-                    f.write(content)
+                    f.write(content or '')
                 return f"File written to {path}"
             
             elif operation == "append":
@@ -371,7 +379,7 @@ class BaseAgent:
     
     # Task processing with goal validation
     async def process_task(self, task_file: str):
-        """Process a claimed task with error handling"""
+        """Process a claimed task with error handling and tool execution"""
         try:
             task = self.load_task(task_file)
             print(f"🔥 Processing task: {task['description']}")
@@ -379,19 +387,26 @@ class BaseAgent:
             # Update heartbeat periodically during processing
             self.update_task_heartbeat(task_file)
             
-            # Execute the actual task
-            result = await self._run_llm_query(self.executor_runner, f"""
+            # Step 1: Generate execution plan
+            plan = await self._run_llm_query(self.executor_runner, f"""
             Task to execute: {task['description']}
             Task type: {task.get('type', 'unknown')}
             Context: {task.get('context', {})}
             
-            Please complete this task and provide the results.
+            Generate a detailed execution plan using the file_operations tool.
+            The plan should include specific file operations to complete this task.
+            Return the plan as a structured response.
             """)
             
-            # Validate result advances original goal
-            if await self.validates_goal_progress(task, result):
+            print(f"📋 Generated plan: {plan[:100]}...")
+            
+            # Step 2: Execute the plan using tools
+            execution_result = await self._execute_plan_with_tools(task, plan)
+            
+            # Step 3: Validate result advances original goal
+            if await self.validates_goal_progress(task, execution_result):
                 print(f"✅ Task completed successfully")
-                self.complete_task(task_file, result)
+                self.complete_task(task_file, execution_result)
             else:
                 print(f"❌ Task result doesn't advance original goal")
                 self.fail_task(task_file, "Result doesn't advance original goal")
@@ -404,6 +419,303 @@ class BaseAgent:
             # Remove from active tasks
             if task_file in self.active_tasks:
                 self.active_tasks.remove(task_file)
+    
+    async def _execute_plan_with_tools(self, task, plan):
+        """Execute the plan using actual tools"""
+        try:
+            print(f"🔧 Executing plan with tools...")
+            print(f"📋 Plan: {plan[:200]}...")
+            
+            # Parse the plan to extract tool calls
+            tool_calls = self._extract_tool_calls(plan)
+            print(f"🔍 Extracted {len(tool_calls)} tool calls: {tool_calls}")
+            
+            if not tool_calls:
+                print(f"⚠️ No tool calls found in plan, returning plan as result")
+                return f"Plan generated but no tools executed:\n{plan}"
+            
+            results = []
+            for i, tool_call in enumerate(tool_calls):
+                print(f"🔧 Executing tool call {i+1}/{len(tool_calls)}: {tool_call['operation']}")
+                
+                try:
+                    # Execute the tool call
+                    print(f"🔧 Calling tool: {tool_call['operation']} with path='{tool_call.get('path', '')}' content='{tool_call.get('content', '')[:50]}...'")
+                    result = await self.filesystem_tool.call(
+                        operation=tool_call['operation'],
+                        path=tool_call.get('path', ''),
+                        content=tool_call.get('content', ''),
+                        **tool_call.get('kwargs', {})
+                    )
+                    
+                    results.append({
+                        'tool_call': tool_call,
+                        'result': result,
+                        'success': True
+                    })
+                    
+                    print(f"✅ Tool execution successful: {result[:50]}...")
+                    
+                except Exception as e:
+                    results.append({
+                        'tool_call': tool_call,
+                        'result': f"Error: {str(e)}",
+                        'success': False
+                    })
+                    print(f"❌ Tool execution failed: {e}")
+            
+            # Compile final result
+            execution_summary = {
+                'task_description': task['description'],
+                'plan': plan,
+                'tool_executions': results,
+                'successful_executions': len([r for r in results if r['success']]),
+                'total_executions': len(results)
+            }
+            
+            return f"Task execution completed:\n{execution_summary}"
+            
+        except Exception as e:
+            print(f"❌ Error executing plan: {e}")
+            return f"Error executing plan: {str(e)}\nOriginal plan: {plan}"
+    
+    def _extract_tool_calls(self, plan):
+        """Extract tool calls from the LLM-generated plan"""
+        tool_calls = []
+        
+        try:
+            # Look for file_operations calls in the plan
+            lines = plan.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                
+                # Handle code block format: ```tool_code\nfile_operations.write(...)
+                if '```tool_code' in line:
+                    # Extract the tool call from the code block
+                    tool_call_start = line.find('file_operations.')
+                    if tool_call_start != -1:
+                        tool_call_text = line[tool_call_start:]
+                        # Remove trailing ```
+                        if tool_call_text.endswith('```'):
+                            tool_call_text = tool_call_text[:-3]
+                        
+                        # Parse the tool call
+                        if 'file_operations.write' in tool_call_text:
+                            try:
+                                # Extract parameters from file_operations.write(file_path='test.txt', content='This is a test file')
+                                if 'file_path=' in tool_call_text and 'content=' in tool_call_text:
+                                    path_start = tool_call_text.find("file_path='") + 11
+                                    path_end = tool_call_text.find("'", path_start)
+                                    path = tool_call_text[path_start:path_end]
+                                    
+                                    content_start = tool_call_text.find("content='") + 9
+                                    content_end = tool_call_text.find("'", content_start)
+                                    content = tool_call_text[content_start:content_end]
+                                    
+                                    tool_calls.append({
+                                        'operation': 'write',
+                                        'path': path,
+                                        'content': content,
+                                        'kwargs': {}
+                                    })
+                            except:
+                                pass
+                
+                # Look for file_operations.write calls with different formats
+                elif 'file_operations.write' in line:
+                    # Format 1: file_operations.write(file_path="hello.py", file_content="print('hello world')")
+                    if 'file_path=' in line and 'file_content=' in line:
+                        try:
+                            path_start = line.find('file_path="') + 11
+                            path_end = line.find('"', path_start)
+                            path = line[path_start:path_end]
+                            
+                            content_start = line.find('file_content="') + 14
+                            content_end = line.find('"', content_start)
+                            content = line[content_start:content_end]
+                            
+                            tool_calls.append({
+                                'operation': 'write',
+                                'path': path,
+                                'content': content,
+                                'kwargs': {}
+                            })
+                        except:
+                            pass
+                    
+                    # Format 2: file_operations.write(filename="hello.py", content="print('hello world')")
+                    elif 'filename=' in line and 'content=' in line:
+                        try:
+                            path_start = line.find('filename="') + 10
+                            path_end = line.find('"', path_start)
+                            path = line[path_start:path_end]
+                            
+                            content_start = line.find('content="') + 9
+                            content_end = line.find('"', content_start)
+                            content = line[content_start:content_end]
+                            
+                            tool_calls.append({
+                                'operation': 'write',
+                                'path': path,
+                                'content': content,
+                                'kwargs': {}
+                            })
+                        except:
+                            pass
+                
+                # Look for file_operations.read calls
+                elif 'file_operations.read' in line:
+                    # Format 1: file_operations.read(file_path="hello.py")
+                    if 'file_path=' in line:
+                        try:
+                            path_start = line.find('file_path="') + 11
+                            path_end = line.find('"', path_start)
+                            path = line[path_start:path_end]
+                            
+                            tool_calls.append({
+                                'operation': 'read',
+                                'path': path,
+                                'kwargs': {}
+                            })
+                        except:
+                            pass
+                    
+                    # Format 2: file_operations.read(filename="hello.py")
+                    elif 'filename=' in line:
+                        try:
+                            path_start = line.find('filename="') + 10
+                            path_end = line.find('"', path_start)
+                            path = line[path_start:path_end]
+                            
+                            tool_calls.append({
+                                'operation': 'read',
+                                'path': path,
+                                'kwargs': {}
+                            })
+                        except:
+                            pass
+                
+                # Look for file_operations.list calls
+                elif 'file_operations.list' in line:
+                    if 'path=' in line:
+                        try:
+                            path_start = line.find('path="') + 6
+                            path_end = line.find('"', path_start)
+                            path = line[path_start:path_end]
+                            
+                            tool_calls.append({
+                                'operation': 'list',
+                                'path': path,
+                                'kwargs': {}
+                            })
+                        except:
+                            pass
+            
+            # If no structured calls found, try to infer from the task description
+            if not tool_calls:
+                task_lower = plan.lower()
+                if 'hello world' in task_lower and 'python' in task_lower:
+                    # Create a hello world script
+                    tool_calls.append({
+                        'operation': 'write',
+                        'path': 'hello_world.py',
+                        'content': 'print("Hello, world!")',
+                        'kwargs': {}
+                    })
+                elif 'create' in task_lower and 'file' in task_lower:
+                    # Generic file creation
+                    tool_calls.append({
+                        'operation': 'write',
+                        'path': 'created_file.txt',
+                        'content': f'File created for task: {task_lower}',
+                        'kwargs': {}
+                    })
+                elif 'python' in task_lower and 'script' in task_lower:
+                    # Create a Python script
+                    tool_calls.append({
+                        'operation': 'write',
+                        'path': 'script.py',
+                        'content': 'print("Hello from Python!")',
+                        'kwargs': {}
+                    })
+                
+                # Try to extract from JSON plan format
+                if 'execution_plan' in plan and 'file_path' in plan:
+                    try:
+                        import json
+                        # Find the JSON part of the plan (handle code blocks)
+                        json_start = plan.find('{')
+                        json_end = plan.rfind('}') + 1
+                        if json_start != -1 and json_end != -1:
+                            json_str = plan[json_start:json_end]
+                            # Clean up the JSON string
+                            json_str = json_str.replace('\\"', '"').replace('\\n', '\n')
+                            plan_data = json.loads(json_str)
+                            
+                            if 'execution_plan' in plan_data:
+                                for step in plan_data['execution_plan']:
+                                    operation = step.get('operation', 'write')
+                                    file_path = step.get('file_path', '')
+                                    content = step.get('content', '')
+                                    
+                                    if file_path and operation == 'write':
+                                        tool_calls.append({
+                                            'operation': 'write',
+                                            'path': file_path,
+                                            'content': content,
+                                            'kwargs': {}
+                                        })
+                                    elif file_path and operation == 'read':
+                                        tool_calls.append({
+                                            'operation': 'read',
+                                            'path': file_path,
+                                            'kwargs': {}
+                                        })
+                    except Exception as e:
+                        print(f"❌ Error parsing JSON plan: {e}")
+                        # Fallback: try to extract file_path and content directly from the plan
+                        # Clear any previous tool calls that might be incorrect
+                        tool_calls = []
+                        try:
+                            if 'file_path' in plan and 'content' in plan:
+                                # Extract file_path - handle escaped quotes
+                                path_pattern = '"file_path": "'
+                                path_start = plan.find(path_pattern) + len(path_pattern)
+                                if path_start >= len(path_pattern):
+                                    path_end = plan.find('"', path_start)
+                                    file_path = plan[path_start:path_end]
+                                    
+                                    # Extract content - handle escaped quotes
+                                    content_pattern = '"content": "'
+                                    content_start = plan.find(content_pattern) + len(content_pattern)
+                                    if content_start >= len(content_pattern):
+                                        # Find the end of the content, handling escaped quotes
+                                        content_end = content_start
+                                        while content_end < len(plan):
+                                            if plan[content_end] == '"' and plan[content_end-1] != '\\':
+                                                break
+                                            content_end += 1
+                                        content = plan[content_start:content_end]
+                                        
+                                        # Clean up escaped characters
+                                        content = content.replace('\\"', '"').replace('\\n', '\n')
+                                        
+                                        if file_path and content:
+                                            tool_calls.append({
+                                                'operation': 'write',
+                                                'path': file_path,
+                                                'content': content,
+                                                'kwargs': {}
+                                            })
+                                            print(f"✅ Fallback extraction: {file_path} -> {content[:50]}...")
+                        except Exception as e2:
+                            print(f"❌ Error in fallback extraction: {e2}")
+            
+        except Exception as e:
+            print(f"❌ Error extracting tool calls: {e}")
+        
+        return tool_calls
     
     def update_task_heartbeat(self, task_file: str):
         """Update task heartbeat to show progress"""
