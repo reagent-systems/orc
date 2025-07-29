@@ -39,6 +39,11 @@ class FileSystemTool(BaseTool):
             if not path:
                 return "Error: No file path provided"
             
+            # Resolve path relative to workspace directory
+            workspace_path = os.getenv('WORKSPACE_PATH', os.path.join(os.path.dirname(__file__), '..', '..', 'workspace'))
+            if not os.path.isabs(path):
+                path = os.path.join(workspace_path, path)
+            
             if operation == "read":
                 with open(path, 'r', encoding='utf-8') as f:
                     return f.read()
