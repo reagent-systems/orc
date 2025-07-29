@@ -439,9 +439,9 @@ class BaseAgent:
                     if await self.should_handle(task):
                         print(f"🎯 Attempting to claim task: {task['description'][:50]}...")
                         claimed_file = self.claim_task(task_file)
-                            if claimed_file:
-                                print(f"✅ Claimed task {task[\'id\'][:8]}...")
-                                await self.process_task(claimed_file)
+                        if claimed_file:
+                            print(f"✅ Claimed task {task['id'][:8]}...")
+                            await self.process_task(claimed_file)
                             break
                 
                 await asyncio.sleep(self.get_polling_interval())
