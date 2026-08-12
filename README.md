@@ -245,6 +245,7 @@ The system is designed for easy extension:
 
 **Advanced Features**:
 - Web UI for monitoring and control
+- Real screen/UI testing via ScreenUIAgent Ralph loop (`outline/screen-ui-testing-ralph-loop.md`)
 - Agent performance analytics
 - Dynamic agent spawning
 - Cross-agent memory sharing
