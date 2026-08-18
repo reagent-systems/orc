@@ -44,6 +44,13 @@ cd google-search-agent && python3 create_test_task.py
 cd terminal-agent && python3 create_test_task.py
 ```
 
+### 4. Gauntlet loop TUI
+```bash
+./scripts/cloud-agent-install.sh
+.venv/bin/python -m gauntlet demo
+```
+Keys: space pause, n step, s stop, q quit. See `gauntlet/README.md`.
+
 ## 📋 Task Creation
 
 ### Basic Task Format
