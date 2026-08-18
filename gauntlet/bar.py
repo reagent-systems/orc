@@ -66,21 +66,33 @@ def extract_preview(html: str, width: int = 36) -> str:
     if not html.strip():
         return "(empty)"
 
-    def grab(pattern: str) -> str:
-        match = re.search(pattern, html, re.I | re.S)
-        return re.sub(r"\s+", " ", match.group(1)).strip() if match else ""
+    def inner(pattern: str, blob: str = html) -> str:
+        match = re.search(pattern, blob, re.I | re.S)
+        return match.group(1) if match else ""
 
-    title = grab(r"<h1[^>]*>(.*?)</h1>")
-    lede = grab(r"<p[^>]*class=['\"]lede['\"][^>]*>(.*?)</p>") or grab(r"<p[^>]*>(.*?)</p>")
-    cta = grab(r"<a[^>]*data-cta=['\"]primary['\"][^>]*>(.*?)</a>") or grab(
-        r"<button[^>]*>(.*?)</button>"
+    def textify(blob: str) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", blob)).strip()
+
+    header_html = inner(r"<header[^>]*>(.*?)</header>")
+    scope = header_html or html
+    title = textify(inner(r"<h1[^>]*>(.*?)</h1>", scope) or inner(r"<h1[^>]*>(.*?)</h1>"))
+    lede = textify(inner(r"<p[^>]*class=['\"]lede['\"][^>]*>(.*?)</p>", scope))
+    if not lede:
+        for candidate in re.findall(r"<p[^>]*>(.*?)</p>", scope, re.I | re.S):
+            text = textify(candidate)
+            if text and text.lower() != "placeholder page":
+                lede = text
+                break
+    cta = textify(
+        inner(r"<a[^>]*data-cta=['\"]primary['\"][^>]*>(.*?)</a>")
+        or inner(r"<button[^>]*>(.*?)</button>")
     )
-    inner = width - 2
-    lines = ["┌" + "─" * inner + "┐"]
+    inner_width = width - 2
+    lines = ["┌" + "─" * inner_width + "┐"]
 
     def row(text: str, emphasize: bool = False) -> None:
-        clipped = text[: inner - 2]
-        pad = inner - 2 - len(clipped)
+        clipped = text[: inner_width - 2]
+        pad = max(0, inner_width - 2 - len(clipped))
         mark = "▸ " if emphasize else "  "
         lines.append("│" + mark + clipped + (" " * pad) + "│")
 
@@ -89,7 +101,7 @@ def extract_preview(html: str, width: int = 36) -> str:
         row(lede)
     if cta:
         row("[" + cta + "]", emphasize=True)
-    lines.append("└" + "─" * inner + "┘")
+    lines.append("└" + "─" * inner_width + "┘")
     return "\n".join(lines)
 
 

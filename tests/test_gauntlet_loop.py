@@ -81,6 +81,18 @@ def test_user_stop_is_the_brake(tmp_path: Path) -> None:
     assert loop.state.status == RunStatus.STOPPED
 
 
+def test_preview_ignores_placeholder_copy() -> None:
+    html = (
+        "<html><body><main><p>Placeholder page</p></main>"
+        '<header data-piece="hero"><h1>Go farther.</h1>'
+        '<p class="lede">A course, not a crowd.</p></header></body></html>'
+    )
+    preview = extract_preview(html)
+    assert "Go farther" in preview
+    assert "A course, not a crowd" in preview
+    assert "Placeholder page" not in preview
+
+
 def test_preview_sketches_first_viewport() -> None:
     html = Path(BAR.source).read_text(encoding="utf-8")
     preview = extract_preview(html)
@@ -91,3 +103,15 @@ def test_preview_sketches_first_viewport() -> None:
 def test_evidence_gate_requires_html_body() -> None:
     assert evidence_ok("<html><body>x</body></html>", "html")
     assert not evidence_ok("<html></html>", "html")
+
+
+def test_shared_candidate_keeps_hero_after_later_pieces(tmp_path: Path) -> None:
+    loop = GauntletLoop(demo_state(), store=RunStore(tmp_path), builder=staged_builder)
+    loop.start()
+    for _ in range(40):
+        loop.step()
+        if loop.state.piece("type").status == PieceStatus.WON:
+            break
+    preview = loop.state.candidate_preview
+    assert "Go farther" in preview or "Run until the road ends" in preview
+    assert "Placeholder page" not in preview

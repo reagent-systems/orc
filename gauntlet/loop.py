@@ -5,7 +5,7 @@ from typing import Optional
 
 from .bar import extract_preview, load_text, validate_bar
 from .models import Piece, PieceStatus, QualityBar, RunState, RunStatus, Verdict
-from .pairs import BuilderFn, CriticFn, blind_critic, default_builder, signal_hits
+from .pairs import BuilderFn, CriticFn, blind_critic, default_builder
 from .store import RunStore
 
 
@@ -95,8 +95,10 @@ class GauntletLoop:
 
     def _build(self, piece: Piece) -> Optional[Verdict]:
         piece.status = PieceStatus.BUILDING
-        artifact, note = self.builder(piece, piece.best_artifact, piece.last_gap)
+        self._pre_build = self.state.candidate_artifact
+        artifact, note = self.builder(piece, self.state.candidate_artifact, piece.last_gap)
         piece.challenger_artifact = artifact
+        self.state.candidate_artifact = artifact
         self.state.builder_notes.append(note)
         self.state.candidate_preview = extract_preview(artifact)
         piece.status = PieceStatus.CRITIQUING
@@ -115,23 +117,22 @@ class GauntletLoop:
         if not verdict.evidence_ok or verdict.winner == "invalid":
             piece.status = PieceStatus.LOST
             piece.last_gap = verdict.reason
+            self.state.candidate_artifact = getattr(self, "_pre_build", piece.best_artifact)
+            self.state.candidate_preview = extract_preview(self.state.candidate_artifact)
         elif verdict.winner == "candidate":
             piece.best_artifact = piece.challenger_artifact
             piece.status = PieceStatus.WON
             piece.wins += 1
             piece.last_gap = ""
-            self.state.candidate_preview = extract_preview(piece.best_artifact)
+            self.state.candidate_artifact = piece.challenger_artifact
+            self.state.candidate_preview = extract_preview(piece.challenger_artifact)
         else:
             piece.losses += 1
             piece.last_gap = verdict.reason
             piece.status = PieceStatus.LOST
-            if (
-                piece.challenger_artifact.strip()
-                and signal_hits(piece.required_signals, piece.challenger_artifact)
-                >= signal_hits(piece.required_signals, piece.best_artifact)
-            ):
-                piece.best_artifact = piece.challenger_artifact
-                self.state.candidate_preview = extract_preview(piece.best_artifact)
+            piece.best_artifact = piece.challenger_artifact
+            self.state.candidate_artifact = piece.challenger_artifact
+            self.state.candidate_preview = extract_preview(piece.challenger_artifact)
 
         self.state.verdicts.append(verdict)
         self._persist()

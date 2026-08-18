@@ -89,6 +89,7 @@ class RunState:
     verdicts: List[Verdict] = field(default_factory=list)
     candidate_preview: str = ""
     reference_preview: str = ""
+    candidate_artifact: str = ""
     builder_notes: List[str] = field(default_factory=list)
     stop_requested: bool = False
 
@@ -109,6 +110,7 @@ class RunState:
             "verdicts": [verdict.to_dict() for verdict in self.verdicts],
             "candidate_preview": self.candidate_preview,
             "reference_preview": self.reference_preview,
+            "candidate_artifact": self.candidate_artifact,
             "stop_requested": self.stop_requested,
         }
 
@@ -124,5 +126,6 @@ class RunState:
             verdicts=[Verdict.from_dict(item) for item in data.get("verdicts", [])],
             candidate_preview=data.get("candidate_preview", ""),
             reference_preview=data.get("reference_preview", ""),
+            candidate_artifact=data.get("candidate_artifact", ""),
             stop_requested=data.get("stop_requested", False),
         )
