@@ -5,9 +5,9 @@ Operator board for a [Gauntlet Loop](https://github.com/robonuggets/gauntlet-loo
 ## Run the demo
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r gauntlet/requirements.txt
+./scripts/cloud-agent-install.sh
 .venv/bin/python -m gauntlet demo
+# Cloud Agents keep a durable venv at ~/.orc-venv
 ```
 
 Keys: `space` pause · `n` step while paused · `s` stop · `q` quit.

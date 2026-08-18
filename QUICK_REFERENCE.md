@@ -48,6 +48,7 @@ cd terminal-agent && python3 create_test_task.py
 ```bash
 ./scripts/cloud-agent-install.sh
 .venv/bin/python -m gauntlet demo
+# Cloud Agents: ~/.orc-venv/bin/python -m gauntlet demo
 ```
 Keys: space pause, n step, s stop, q quit. See `gauntlet/README.md`.
 
