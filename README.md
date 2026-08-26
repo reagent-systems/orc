@@ -244,6 +244,7 @@ The system is designed for easy extension:
 - EmailAgent, SlackAgent, DataAnalysisAgent, DocumentAgent
 
 **Advanced Features**:
+- Gauntlet loop TUI (`python -m gauntlet demo`) — live candidate vs named bar, blind critic picks
 - Web UI for monitoring and control
 - Agent performance analytics
 - Dynamic agent spawning
