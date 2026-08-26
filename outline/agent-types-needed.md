@@ -28,6 +28,10 @@
 **Capabilities**: `["test_execution", "test_generation", "quality_assurance"]`
 **Description**: Runs test suites, generates tests, validates code quality. Claims tasks like "run tests", "write unit tests", "check code coverage". Integrates with various testing frameworks.
 
+### 6b. ScreenUIAgent (Ralph loop)
+**Capabilities**: `["ui_testing", "browser_automation", "visual_verification", "screen_recording"]`
+**Description**: Drives a real browser/viewport, captures screenshots/video, and runs a persistent observe→act→evaluate→fix Ralph loop until UI acceptance criteria pass or budget is exhausted. Claims tasks like `ralph_ui_loop`, "verify dashboard in browser", "visual regression check". Complements TestAgent (code-level) with screen-level verification. See `outline/screen-ui-testing-ralph-loop.md`.
+
 ### 7. DatabaseAgent
 **Capabilities**: `["database_operations", "sql_queries", "migrations", "data_management"]`
 **Description**: Handles database tasks - queries, migrations, schema changes, data imports/exports. Claims tasks involving database work and can connect to various database systems.
