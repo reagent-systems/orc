@@ -1,0 +1,9 @@
+# Multi-Agent Orchestration System (ORC) dependencies
+#
+# Core: required by all agents (each drives Gemini via Google ADK).
+google-adk>=2.6.3
+python-dotenv>=1.0.0
+
+# Optional: only needed by the google-sheets-agent.
+gspread>=6.0.0
+pandas>=2.0.0
